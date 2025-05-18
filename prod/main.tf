@@ -151,7 +151,6 @@ module "ecs" {
   source  = "terraform-aws-modules/ecs/aws"
   version = "5.12.1"
 
-
   cluster_name = "${local.prefix}-ecs"
 
   cluster_configuration = {
@@ -396,15 +395,15 @@ module "security_group_ecs" {
 }
 
 # Build and push Docker image
-module "docker_image" {
-  source             = "../modules/regional/docker_image"
-  docker_file_path   = "/home/datonst/my-project/azure-project/lab2/my-app/Dockerfile"
-  source_path        = "/home/datonst/my-project/azure-project/lab2/my-app"
-  ecr_repository_url = module.my_app_ecr.repository_url
-  region             = local.region
-  image_tag          = var.image_tag
-  domain_name        = local.domain_name
-}
+# module "docker_image" {
+#   source             = "../modules/regional/docker_image"
+#   docker_file_path   = "/home/datonst/my-project/azure-project/lab2/my-app/Dockerfile"
+#   source_path        = "/home/datonst/my-project/azure-project/lab2/my-app"
+#   ecr_repository_url = module.my_app_ecr.repository_url
+#   region             = local.region
+#   image_tag          = var.image_tag
+#   domain_name        = local.domain_name
+# }
 
 # Target Group for ALB
 resource "aws_lb_target_group" "app" {
@@ -439,40 +438,40 @@ resource "aws_lb_listener" "http" {
 }
 
 # ECS Service
-module "ecs_service" {
-  source = "../modules/regional/ecs_service"
+# module "ecs_service" {
+#   source = "../modules/regional/ecs_service"
 
-  service_name       = "${local.prefix}-app-service"
-  ecs_cluster_id     = module.ecs.cluster_id
-  ecr_repository_url = module.my_app_ecr.repository_url
-  image_tag          = module.docker_image.image_tag
-  container_name     = "${local.prefix}-app"
+#   service_name       = "${local.prefix}-app-service"
+#   ecs_cluster_id     = module.ecs.cluster_id
+#   ecr_repository_url = module.my_app_ecr.repository_url
+#   image_tag          = module.docker_image.image_tag
+#   container_name     = "${local.prefix}-app"
 
-  task_cpu         = 512
-  task_memory      = 1024
-  container_cpu    = 256
-  container_memory = 512
-  container_port   = 5000
+#   task_cpu         = 512
+#   task_memory      = 1024
+#   container_cpu    = 256
+#   container_memory = 512
+#   container_port   = 5000
 
-  desired_count      = 2
-  subnet_ids         = module.vpc.vpc_private_subnet_ids
-  security_group_ids = [module.security_group_ecs.security_group_id]
-  assign_public_ip   = false
+#   desired_count      = 2
+#   subnet_ids         = module.vpc.vpc_private_subnet_ids
+#   security_group_ids = [module.security_group_ecs.security_group_id]
+#   assign_public_ip   = false
 
-  lb_target_group_arn = aws_lb_target_group.app.arn
+#   lb_target_group_arn = aws_lb_target_group.app.arn
 
-  environment_variables = [
-    {
-      name  = "ENVIRONMENT"
-      value = "production"
-    }
-  ]
+#   environment_variables = [
+#     {
+#       name  = "ENVIRONMENT"
+#       value = "production"
+#     }
+#   ]
 
-  region = local.region
-  tags   = local.tags
+#   region = local.region
+#   tags   = local.tags
 
-  depends_on = [module.docker_image.build_completed]
-}
+#   depends_on = [module.docker_image.build_completed]
+# }
 
 
 
