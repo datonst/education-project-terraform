@@ -1,0 +1,71 @@
+# The GitHub Actions docs (https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions#on)
+# describe other options for 'on', 'pull_request' is a good default.
+name: 'Terraform Infracost'
+on:
+  pull_request:
+    branches:
+    - main
+env:
+  # If you use private modules you'll need this env variable to use
+  # the same ssh-agent socket value across all jobs & steps.
+  SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    name: 'Check on change directory'
+    # Required permissions
+    permissions:
+      pull-requests: read
+    # Set job outputs to values from filter step
+    outputs:
+      dev: ${{ steps.filter.outputs.dev }}
+      prod: ${{ steps.filter.outputs.prod }}
+    steps:
+    # For pull requests it's not necessary to checkout the code
+    - uses: dorny/paths-filter@v2
+      id: filter
+      with:
+        filters: |
+          dev:
+            - 'dev/**'
+          prod:
+            - 'prod/**'
+  DEV-infracost:
+    needs: changes
+    if: needs.changes.outputs.dev == 'true'
+    permissions:
+      contents: read
+      # Required to post comments
+      pull-requests: write
+    env:
+      TF_ROOT: ./dev
+    name: 'Infracost - DEV'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      - name: 'Infracost'
+        uses: ./.github/actions/tf-infracost
+        with:
+          infracost_key: ${{ secrets.INFRACOST_API_KEY }}
+          env: Dev
+
+  PROD-infracost:
+    needs: changes
+    if: needs.changes.outputs.prod == 'true'
+    permissions:
+      contents: read
+      # Required to post comments
+      pull-requests: write
+    env:
+      TF_ROOT: ./prod
+    name: 'Infracost - PROD'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      - name: 'Infracost - PROD'
+        uses: ./.github/actions/tf-infracost
+        with:
+          infracost_key: ${{ secrets.INFRACOST_API_KEY }}
+          env: Prod

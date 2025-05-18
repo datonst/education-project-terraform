@@ -1,0 +1,72 @@
+name: 'Terraform Plan'
+
+on:
+  pull_request:
+    branches:
+    - main
+
+#Special permissions required for OIDC authentication
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    name: 'Check on change directory'
+    # Required permissions
+    permissions:
+      pull-requests: read
+    # Set job outputs to values from filter step
+    outputs:
+      dev: ${{ steps.filter.outputs.dev }}
+      prod: ${{ steps.filter.outputs.prod }}
+    steps:
+    # For pull requests it's not necessary to checkout the code
+    - uses: dorny/paths-filter@v2
+      id: filter
+      with:
+        filters: |
+          dev:
+            - 'dev/**'
+          prod:
+            - 'prod/**'
+
+  terraform-plan-dev:
+    needs: changes
+    if: needs.changes.outputs.dev == 'true'
+    permissions: write-all
+    environment: 'dev'
+    name: 'Terraform Plan DEV'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Terraform Plan
+      uses: ./.github/actions/tf-plan-me
+      with:
+        working-directory: dev
+        aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+        role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE }}
+  
+  terraform-plan-prod:
+    needs: changes
+    if: needs.changes.outputs.prod == 'true'
+    environment: 'prod'
+    name: 'Terraform Plan PROD'
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Terraform plan prod
+      uses: ./.github/actions/tf-plan-me
+      with:
+        working-directory: prod
+        aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+        role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE }}

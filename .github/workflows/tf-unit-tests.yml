@@ -1,0 +1,55 @@
+name: 'Terraform Unit Tests'
+
+on:
+  pull_request:
+    branches:
+    - main
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    name: 'Check on change directory'
+    # Required permissions
+    permissions:
+      pull-requests: read
+    # Set job outputs to values from filter step
+    outputs:
+      dev: ${{ steps.filter.outputs.dev }}
+      prod: ${{ steps.filter.outputs.prod }}
+    steps:
+    # For pull requests it's not necessary to checkout the code
+    - uses: dorny/paths-filter@v2
+      id: filter
+      with:
+        filters: |
+          dev:
+            - 'dev/**'
+          prod:
+            - 'prod/**'
+
+  DEV-terraform-unit-tests:
+    needs: changes
+    if: needs.changes.outputs.dev == 'true'
+    permissions: write-all
+    name: 'Terraform Unit Tests - DEV'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: 'Terraform Unit Tests'
+        uses: ./.github/actions/tf-unit-tests
+        with:
+          working-directory: dev
+  PROD-terraform-unit-tests:
+    needs: changes
+    if: needs.changes.outputs.prod == 'true'
+    permissions: write-all
+    name: 'Terraform Unit Tests - PROD'
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v3
+      - name: 'Terraform Unit Tests'
+        uses: ./.github/actions/tf-unit-tests
+        with:
+          working-directory: prod

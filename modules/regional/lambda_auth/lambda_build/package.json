@@ -1,0 +1,10 @@
+{
+  "name": "auth-lambda",
+  "version": "1.0.0",
+  "description": "Lambda@Edge authentication function",
+  "main": "index.js",
+  "dependencies": {
+    "jsonwebtoken": "^9.0.0",
+    "jwks-rsa": "^3.0.1"
+  }
+}

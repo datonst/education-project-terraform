@@ -1,0 +1,75 @@
+name: 'Terraform Apply'
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - closed
+  workflow_dispatch:
+
+#Special permissions required for OIDC authentication
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    # Required permissions
+    permissions:
+      pull-requests: read
+    # Set job outputs to values from filter step
+    outputs:
+      dev: ${{ steps.filter.outputs.dev }}
+      prod: ${{ steps.filter.outputs.prod }}
+    steps:
+    # For pull requests it's not necessary to checkout the code
+    - uses: dorny/paths-filter@v2
+      id: filter
+      with:
+        filters: |
+          dev:
+            - 'dev/**'
+          prod:
+            - 'prod/**'
+
+  terraform-apply-dev:
+    name: 'Terraform Apply DEV'
+    needs: changes
+    if: needs.changes.outputs.dev == 'true'  && github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+    # Checkout the repository to the GitHub Actions runner
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Terraform Apply DEV
+      uses: ./.github/actions/tf-apply
+      with:
+       working-directory: ./dev
+       aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+       role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE }}
+
+
+  terraform-apply-prod:
+    name: 'Terraform Apply PROD'
+    environment: prod
+    needs: changes
+    if: needs.changes.outputs.prod == 'true' && github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    
+    steps:
+    # Checkout the repository to the GitHub Actions runner
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Terraform Apply PROD
+      uses: ./.github/actions/tf-apply
+      with:
+        working-directory: ./prod
+        aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+        role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE }}
