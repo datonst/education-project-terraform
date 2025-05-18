@@ -1,1 +1,1 @@
-Team Projects
+Team Project
