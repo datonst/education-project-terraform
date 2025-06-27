@@ -1,6 +1,6 @@
 terraform {
   backend "s3" {
-    bucket = "education-t-test-infra-backend"
+    bucket = "team4uet-prod-infra-backend"
     key    = "prod/aws-github-actions-oidc.tfstate"
     region = "ap-southeast-1"
   }

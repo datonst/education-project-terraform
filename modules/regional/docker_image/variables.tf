@@ -18,7 +18,7 @@ variable "build_args" {
 variable "image_tag" {
   description = "Tag for the Docker image"
   type        = string
-  default     = "latest"
+  default     = "image:v0"
 }
 
 variable "ecr_repository_url" {
@@ -32,7 +32,3 @@ variable "region" {
 }
 
 
-variable "domain_name" {
-  description = "Domain name"
-  type        = string
-}

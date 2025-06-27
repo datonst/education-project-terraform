@@ -1,0 +1,9 @@
+# Copy this file to terraform.tfvars and fill in your actual values
+
+# AWS Credentials for backend application
+# These will be stored securely in SSM Parameter Store
+aws_access_key_id     = ""
+aws_secret_access_key = ""
+
+# Note: These values will be encrypted and stored in SSM Parameter Store
+# Make sure to use appropriate IAM user credentials with minimal required permissions 

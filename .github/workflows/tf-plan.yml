@@ -10,7 +10,11 @@ permissions:
   id-token: write
   contents: read
   pull-requests: write
+  checks: write
+  statuses: write
   issues: write
+  packages: write
+  deployments: write
 
 jobs:
   changes:
@@ -54,6 +58,7 @@ jobs:
         role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE }}
   
   terraform-plan-prod:
+    name: 'Terraform plan PROD'
     needs: changes
     if: needs.changes.outputs.prod == 'true'
     environment: 'prod'

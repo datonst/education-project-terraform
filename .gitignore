@@ -73,4 +73,6 @@ coverage.txt
 # IDEs
 .vscode/
 
-
+docs/*
+node_modules/
+*.sh

@@ -91,6 +91,15 @@ variable "environment_variables" {
   default = []
 }
 
+variable "secrets" {
+  description = "Secrets from SSM Parameter Store for the container"
+  type = list(object({
+    name      = string
+    valueFrom = string
+  }))
+  default = []
+}
+
 variable "region" {
   description = "AWS region"
   type        = string
