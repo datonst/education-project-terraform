@@ -30,6 +30,7 @@ resource "aws_ecs_task_definition" "this" {
         }
       }
       environment = var.environment_variables
+      secrets     = var.secrets
     }
   ])
 
@@ -102,6 +103,39 @@ resource "aws_iam_role" "ecs_execution_role" {
 resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
   role       = aws_iam_role.ecs_execution_role.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+# Additional policy for SSM parameter access
+resource "aws_iam_role_policy" "ecs_execution_ssm_policy" {
+  count = length(var.secrets) > 0 ? 1 : 0
+  name  = "${var.service_name}-execution-ssm-policy"
+  role  = aws_iam_role.ecs_execution_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameters",
+          "ssm:GetParameter"
+        ]
+        Resource = [for secret in var.secrets : secret.valueFrom]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "kms:Decrypt"
+        ]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "ssm.${var.region}.amazonaws.com"
+          }
+        }
+      }
+    ]
+  })
 }
 
 resource "aws_iam_role" "ecs_task_role" {

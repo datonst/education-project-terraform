@@ -1,0 +1,27 @@
+{
+    "name": "documentdb-connection-test",
+    "version": "1.0.0",
+    "description": "Simple DocumentDB Connection Test Application",
+    "main": "index.js",
+    "scripts": {
+        "start": "node index.js",
+        "dev": "nodemon index.js",
+        "test-connection": "node index.js"
+    },
+    "dependencies": {
+        "express": "^4.18.2",
+        "mongodb": "^6.3.0",
+        "dotenv": "^16.3.1"
+    },
+    "devDependencies": {
+        "nodemon": "^3.0.2"
+    },
+    "keywords": [
+        "documentdb",
+        "aws",
+        "mongodb",
+        "connection-test"
+    ],
+    "author": "Team4UET",
+    "license": "MIT"
+}

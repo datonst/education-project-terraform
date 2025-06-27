@@ -34,7 +34,20 @@ module "security_group_ec2" {
     "from_port" : 1194,
     "to_port" : 1194,
     "protocol" : "udp"
-  }]
+    },
+    {
+      "cidr_blocks" : ["0.0.0.0/0"],
+      "from_port" : 4173,
+      "to_port" : 4173,
+      "protocol" : "tcp"
+    },
+    {
+      "cidr_blocks" : ["0.0.0.0/0"],
+      "from_port" : 3000,
+      "to_port" : 3000,
+      "protocol" : "tcp"
+    }
+  ]
 
   egress_rules = [{
     "cidr_blocks" : ["0.0.0.0/0"],
@@ -44,27 +57,36 @@ module "security_group_ec2" {
   }]
 }
 
-module "security_group_rds" {
+module "security_group_documentdb" {
   source = "../modules/regional/security-groups"
 
-  sg_name = "rds-sg"
+  sg_name = "documentdb-sg"
   vpc_id  = module.vpc.vpc_id
 
   ingress_rules = [{
-    "cidr_blocks" : ["10.0.0.0/16"],
-    "from_port" : 5432,
-    "to_port" : 5432,
+    # "cidr_blocks" : ["10.0.0.0/16"],
+    cidr_blocks = ["0.0.0.0/0"],
+    "from_port" : 27017,
+    "to_port" : 27017,
     "protocol" : "tcp"
-  }]
+    },
+    {
+      # Cho phép ICMP (ping)
+      cidr_blocks = ["0.0.0.0/0"], # HOẶC IP/SG cụ thể của nguồn
+      from_port   = -1,            # Hoặc 8 cho Echo Request
+      to_port     = -1,            # Hoặc 0 cho Echo Request
+      protocol    = "icmp"
+    }
+  ]
 
   egress_rules = [{
-    "cidr_blocks" : ["10.0.0.0/16"],
+    # "cidr_blocks" : ["10.0.0.0/16"],
+    cidr_blocks = ["0.0.0.0/0"],
     "from_port" : 0,
     "to_port" : 0,
     "protocol" : "-1"
   }]
 }
-
 
 module "security_group_ec2_alb" {
   source = "../modules/regional/security-groups"
@@ -112,16 +134,37 @@ resource "aws_key_pair" "key_pair" {
   public_key = tls_private_key.key_pair.public_key_openssh
 }
 # Save file
-# resource "local_file" "ssh_key" {
-#   filename = "key.pem"
-#   content  = tls_private_key.key_pair.private_key_pem
-# }
+resource "local_file" "ssh_key" {
+  filename = "${aws_key_pair.key_pair.key_name}.pem"
+  content  = tls_private_key.key_pair.private_key_pem
+}
+
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"]
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
+  filter {
+    name   = "architecture"
+    values = ["x86_64"]
+  }
+  filter {
+    name   = "root-device-type"
+    values = ["ebs"]
+  }
+}
 
 module "ec2-public" {
   source        = "../modules/regional/ec2/"
   name          = "${local.prefix}-jumphost"
-  ami_id        = "ami-0b4bb4751e9a8fbdb"
-  instance_type = ["t3.micro"]
+  ami_id        = data.aws_ami.ubuntu.id
+  instance_type = ["t2.micro"]
   key_name      = aws_key_pair.key_pair.key_name
 
   ec2_ips                     = ["10.0.0.10"]
@@ -134,16 +177,18 @@ module "ec2-public" {
 }
 
 
-resource "aws_service_discovery_http_namespace" "example" {
-  name        = local.prefix
-  description = "example"
-}
+
 
 # ECR
 
-module "ecr" {
+module "frontend_ecr" {
   source   = "../modules/regional/ecr"
-  ecr_name = local.prefix
+  ecr_name = "${local.prefix}-frontend"
+}
+
+module "backend_ecr" {
+  source   = "../modules/regional/ecr"
+  ecr_name = "${local.prefix}-backend"
 }
 
 # ECS
@@ -194,82 +239,56 @@ module "s3" {
 #   tags   = local.tags
 # }
 
-module "s3-gateway" {
-  source          = "../modules/regional/s3-gateway"
-  vpc_id          = module.vpc.vpc_id
-  region          = local.region
-  route_table_ids = module.vpc.aws_route_table_association_private
-}
-
-# RDS Postgres
-resource "aws_db_subnet_group" "default" {
-  name       = "main"
-  subnet_ids = module.vpc.vpc_database_subnet_ids
-
-  tags = {
-    Name = "${local.prefix}-subnet-group"
-  }
-}
-
-module "my_db_postgres" {
-  source            = "../modules/regional/rds"
-  availability_zone = "${local.region}a"
-  identifier        = "${local.prefix}-db"
-
-  engine         = "postgres"
-  engine_version = "16.6"
-  instance_class = "db.t3.micro"
-
-  allocated_storage = 10
-  enabled_cloudwatch_logs_exports = [
-    "postgresql", "upgrade"
-  ]
-  db_name  = "myprojectadmin"
-  username = "myprojectadmin"
-  password = "admin123456"
-  port     = 5432
-
-  multi_az                   = false
-  db_subnet_group_name       = aws_db_subnet_group.default.name
-  vpc_security_group_ids     = [module.security_group_rds.security_group_id]
-  backup_retention_period    = 7
-  skip_final_snapshot        = true
-  deletion_protection        = false
-  auto_minor_version_upgrade = false
-  tags = {
-    Name = "${local.prefix}-db"
-  }
-}
-
-# module "my_db_postgres_replica" {
-#   source = "../modules/regional/rds"
-
-#   identifier        = "${local.prefix}-replica"
-#   availability_zone = "${local.region}b"
-
-#   replicate_source_db = module.my_db_postgres.db_instance_identifier
-
-#   engine                  = "postgres"
-#   engine_version          = "14"
-#   instance_class          = "db.m5.large"
-#   backup_retention_period = 0
-#   allocated_storage       = 10
-
-#   enabled_cloudwatch_logs_exports = [
-#     "postgresql", "upgrade"
-#   ]
-#   port = 5432
-
-#   multi_az               = false
-#   vpc_security_group_ids = [module.security_group_rds.security_group_id]
-
-#   skip_final_snapshot = true
-#   deletion_protection = false
-
-#   tags = {
-#     Name = "${local.prefix}-replica"
-#   }
+# module "s3-gateway" {
+#   source          = "../modules/regional/s3-gateway"
+#   vpc_id          = module.vpc.vpc_id
+#   region          = local.region
+#   route_table_ids = module.vpc.aws_route_table_association_private
 # }
+
+# DocumentDB
+module "documentdb" {
+  source = "../modules/regional/documentdb"
+
+  cluster_identifier = "${local.prefix}-documentdb"
+  master_username    = "myprojectadmin"
+  master_password    = "admin123456"
+
+  subnet_ids             = module.vpc.vpc_database_subnet_ids
+  subnet_group_name      = "${local.prefix}-documentdb-subnet-group"
+  vpc_security_group_ids = [module.security_group_documentdb.security_group_id]
+
+  parameter_group_name = "${local.prefix}-documentdb-params"
+  family               = "docdb5.0"
+
+  instance_class = "db.t3.medium"
+  instance_count = 1
+
+  backup_retention_period = 7
+  preferred_backup_window = "07:00-09:00"
+  skip_final_snapshot     = true
+  deletion_protection     = false
+
+  storage_encrypted = true
+  port              = 27017
+
+  enabled_cloudwatch_logs_exports = ["audit", "profiler"]
+
+  cluster_parameters = [
+    {
+      name  = "audit_logs"
+      value = "enabled"
+    },
+    {
+      name  = "profiler"
+      value = "enabled"
+    }
+  ]
+
+  tags = merge(local.tags, {
+    Name = "${local.prefix}-documentdb"
+  })
+}
 
 # ALB
 
@@ -286,14 +305,14 @@ module "application-loadbalancer" {
 }
 
 # WAF
-module "waf_cloudfront" {
-  providers = {
-    aws = aws.us
-  }
-  source    = "../modules/regional/waf"
-  waf_names = "${local.prefix}-waf"
-  tags      = local.tags
-}
+# module "waf_cloudfront" {
+#   providers = {
+#     aws = aws.us
+#   }
+#   source    = "../modules/regional/waf"
+#   waf_names = "${local.prefix}-waf"
+#   tags      = local.tags
+# }
 
 # Cloudfront
 module "cloudfront" {
@@ -304,12 +323,11 @@ module "cloudfront" {
   s3_bucket_arn         = module.s3.s3_bucket.arn
   s3_bucket_domain_name = module.s3.s3_bucket.bucket_domain_name
   s3_bucket_id          = module.s3.s3_bucket.bucket
-
-  acm_certificate_arn            = module.acm_cloudfront.acm_certificate_arn
-  web_acl_id                     = module.waf_cloudfront.web_acl_id
+  domain_names          = [local.domain_name]
+  acm_certificate_arn   = module.acm_cloudfront.acm_certificate_arn
+  # web_acl_id                     = module.waf_cloudfront.web_acl_id
   cloudfront_default_certificate = false
   ssl_support_method             = "sni-only"
-  domain_names                   = [local.domain_name]
   custom_error_response = [
     {
       error_caching_min_ttl = 10
@@ -329,7 +347,7 @@ module "cloudfront" {
 
   depends_on = [
     module.s3,
-    module.waf_cloudfront
+    # module.waf_cloudfront
   ]
 }
 
@@ -352,11 +370,7 @@ module "acm_cloudfront" {
 #   tags        = local.tags
 # }
 
-# ECR Repository for my-app
-module "my_app_ecr" {
-  source   = "../modules/regional/ecr"
-  ecr_name = "${local.prefix}-my-app"
-}
+
 
 # Security Group for ECS
 module "security_group_ecs" {
@@ -380,8 +394,14 @@ module "security_group_ecs" {
     },
     {
       "cidr_blocks" : ["0.0.0.0/0"],
-      "from_port" : 5000,
-      "to_port" : 5000,
+      "from_port" : 8080,
+      "to_port" : 8080,
+      "protocol" : "tcp"
+    },
+    {
+      "cidr_blocks" : ["0.0.0.0/0"],
+      "from_port" : 3000,
+      "to_port" : 3000,
       "protocol" : "tcp"
     }
   ]
@@ -395,20 +415,28 @@ module "security_group_ecs" {
 }
 
 # Build and push Docker image
-module "docker_image" {
+module "frontend_docker_image" {
   source             = "../modules/regional/docker_image"
-  docker_file_path   = "/home/datonst/my-project/azure-project/lab2/my-app/Dockerfile"
-  source_path        = "/home/datonst/my-project/azure-project/lab2/my-app"
-  ecr_repository_url = module.my_app_ecr.repository_url
+  docker_file_path   = "${path.module}/../app/Dockerfile"
+  source_path        = "${path.module}/../app"
+  ecr_repository_url = module.frontend_ecr.repository_url
   region             = local.region
-  image_tag          = var.image_tag
-  domain_name        = local.domain_name
+  image_tag          = "latest"
 }
 
+
+module "backend_docker_image" {
+  source             = "../modules/regional/docker_image"
+  docker_file_path   = "${path.module}/../app/Dockerfile"
+  source_path        = "${path.module}/../app"
+  ecr_repository_url = module.backend_ecr.repository_url
+  region             = local.region
+  image_tag          = "latest"
+}
 # Target Group for ALB
 resource "aws_lb_target_group" "app" {
   name        = "${local.prefix}-tg"
-  port        = 5000
+  port        = 80
   protocol    = "HTTP"
   vpc_id      = module.vpc.vpc_id
   target_type = "ip"
@@ -424,7 +452,25 @@ resource "aws_lb_target_group" "app" {
     protocol            = "HTTP"
   }
 }
+resource "aws_lb_target_group" "app_backend" {
+  name        = "${local.prefix}-tg-backend"
+  port        = 3000
+  protocol    = "HTTP"
+  vpc_id      = module.vpc.vpc_id
+  target_type = "ip"
 
+  health_check {
+    enabled             = true
+    interval            = 30
+    path                = "/"
+    port                = "traffic-port"
+    healthy_threshold   = 3
+    unhealthy_threshold = 5
+    timeout             = 10
+    protocol            = "HTTP"
+    matcher             = "200"
+  }
+}
 # ALB Listener
 resource "aws_lb_listener" "http" {
   load_balancer_arn = module.application-loadbalancer.lb_arn
@@ -435,25 +481,44 @@ resource "aws_lb_listener" "http" {
     type             = "forward"
     target_group_arn = aws_lb_target_group.app.arn
   }
+  depends_on = [aws_lb_target_group.app]
+}
+
+# ALB Listener Rule for Backend API
+resource "aws_lb_listener_rule" "api" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 100
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app_backend.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/api/*", "/api-docs/*", "/api", "/api-docs"]
+    }
+  }
+  depends_on = [aws_lb_target_group.app_backend]
 }
 
 # ECS Service
-module "ecs_service" {
+module "frontend_ecs_service" {
   source = "../modules/regional/ecs_service"
 
-  service_name       = "${local.prefix}-app-service"
+  service_name       = "${local.prefix}-frontend-service"
   ecs_cluster_id     = module.ecs.cluster_id
-  ecr_repository_url = module.my_app_ecr.repository_url
-  image_tag          = module.docker_image.image_tag
-  container_name     = "${local.prefix}-app"
+  ecr_repository_url = module.frontend_ecr.repository_url
+  image_tag          = module.frontend_docker_image.image_tag
+  container_name     = "${local.prefix}-frontend"
 
   task_cpu         = 512
   task_memory      = 1024
   container_cpu    = 256
   container_memory = 512
-  container_port   = 5000
+  container_port   = 80
 
-  desired_count      = 2
+  desired_count      = 1
   subnet_ids         = module.vpc.vpc_private_subnet_ids
   security_group_ids = [module.security_group_ecs.security_group_id]
   assign_public_ip   = false
@@ -470,24 +535,126 @@ module "ecs_service" {
   region = local.region
   tags   = local.tags
 
-  depends_on = [module.docker_image.build_completed]
+  depends_on = [module.frontend_docker_image.build_completed]
 }
 
+module "backend_ecs_service" {
+  source = "../modules/regional/ecs_service"
 
+  service_name       = "${local.prefix}-backend-service"
+  ecs_cluster_id     = module.ecs.cluster_id
+  ecr_repository_url = module.backend_ecr.repository_url
+  image_tag          = module.backend_docker_image.image_tag
+  container_name     = "${local.prefix}-backend"
+
+  task_cpu         = 512
+  task_memory      = 1024
+  container_cpu    = 256
+  container_memory = 512
+  container_port   = 3000
+
+  desired_count      = 1
+  subnet_ids         = module.vpc.vpc_private_subnet_ids
+  security_group_ids = [module.security_group_ecs.security_group_id]
+  assign_public_ip   = false
+
+  lb_target_group_arn = aws_lb_target_group.app_backend.arn
+
+  # Non-sensitive environment variables
+  environment_variables = [
+    {
+      name  = "PORT"
+      value = "3000"
+    },
+    {
+      name  = "AWS_REGION"
+      value = local.region
+    },
+    {
+      name  = "AWS_BUCKET"
+      value = "team4-storage-backend"
+    },
+    {
+      name  = "CLOUDFRONT_DOMAIN"
+      value = local.domain_name
+    }
+  ]
+
+  # Sensitive data from SSM Parameter Store
+  secrets = [
+    {
+      name      = "AWS_ACCESS_KEY_ID"
+      valueFrom = module.backend_ssm_parameters.parameter_arns["/${local.prefix}/backend/aws_access_key_id"]
+    },
+    {
+      name      = "AWS_SECRET_ACCESS_KEY"
+      valueFrom = module.backend_ssm_parameters.parameter_arns["/${local.prefix}/backend/aws_secret_access_key"]
+    },
+    {
+      name      = "COGNITO_USER_POOL_ID"
+      valueFrom = module.backend_ssm_parameters.parameter_arns["/${local.prefix}/backend/cognito_user_pool_id"]
+    },
+    {
+      name      = "COGNITO_APP_CLIENT_ID"
+      valueFrom = module.backend_ssm_parameters.parameter_arns["/${local.prefix}/backend/cognito_app_client_id"]
+    },
+    {
+      name      = "MONGODB_URI"
+      valueFrom = module.backend_ssm_parameters.parameter_arns["/${local.prefix}/backend/mongodb_uri"]
+    }
+  ]
+
+  region = local.region
+  tags   = local.tags
+
+  depends_on = [module.backend_docker_image, module.documentdb, module.backend_ssm_parameters, module.cloudfront, module.s3]
+}
+
+# SSM Parameters for backend configuration
+module "backend_ssm_parameters" {
+  source = "../modules/regional/ssm-parameters"
+
+  parameters = {
+    # Sensitive parameters (SecureString)
+    "/${local.prefix}/backend/aws_access_key_id" = {
+      type        = "SecureString"
+      value       = var.aws_access_key_id
+      description = "AWS Access Key ID for backend"
+    }
+    "/${local.prefix}/backend/aws_secret_access_key" = {
+      type        = "SecureString"
+      value       = var.aws_secret_access_key
+      description = "AWS Secret Access Key for backend"
+    }
+    "/${local.prefix}/backend/mongodb_uri" = {
+      type        = "SecureString"
+      value       = "mongodb://${module.documentdb.cluster_master_username}:${module.documentdb.cluster_master_password}@${module.documentdb.cluster_endpoint}:27017/e-learn?ssl=true&tlsCAFile=global-bundle.pem"
+      description = "MongoDB connection URI"
+    }
+    "/${local.prefix}/backend/cognito_user_pool_id" = {
+      type        = "SecureString"
+      value       = module.cognito.user_pool_id
+      description = "Cognito User Pool ID"
+    }
+    "/${local.prefix}/backend/cognito_app_client_id" = {
+      type        = "SecureString"
+      value       = module.cognito.app_client_id
+      description = "Cognito App Client ID"
+    }
+  }
+
+  tags = local.tags
+
+  depends_on = [module.documentdb, module.cognito]
+}
 
 # Cognito User Pool để xác thực người dùng
 module "cognito" {
-  providers = {
-    aws = aws.us
-  }
   source        = "../modules/regional/cognito"
   prefix        = local.prefix
   domain_prefix = "${local.prefix}-auth"
-  # callback_urls = ["https://${local.domain_name}/login/callback", "https://${local.domain_name}/login/oauth2/callback"]
-  # callback_urls = ["https://${local.domain_name}"]
-  # logout_urls = ["https://${local.domain_name}/logout"]
-  # logout_urls = ["https://${local.domain_name}"]
-  tags = local.tags
+  callback_urls = ["https://d84l1y8p4kdic.cloudfront.net"]
+  tags          = local.tags
 }
 
 # # Lambda@Edge functions để xác thực request
@@ -507,6 +674,26 @@ module "lambda_auth" {
 
 
 # Outputs 
+output "documentdb_cluster_endpoint" {
+  description = "DocumentDB cluster endpoint"
+  value       = module.documentdb.cluster_endpoint
+}
+
+output "documentdb_cluster_reader_endpoint" {
+  description = "DocumentDB cluster reader endpoint"
+  value       = module.documentdb.cluster_reader_endpoint
+}
+
+output "documentdb_cluster_port" {
+  description = "DocumentDB cluster port"
+  value       = module.documentdb.cluster_port
+}
+
+output "documentdb_cluster_id" {
+  description = "DocumentDB cluster identifier"
+  value       = module.documentdb.cluster_id
+}
+
 # output "cloudfront_domain_name" {
 #   description = "CloudFront domain name"
 #   value       = module.cloudfront.cloudfront_distribution_domain_name

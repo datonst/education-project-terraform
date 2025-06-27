@@ -4,7 +4,7 @@ locals {
     Environment = "prod"
     Terraform   = "true"
   }
-  prefix      = "demo-project-test"
+  prefix      = "team4uet"
   domain_name = "secureguard.today"
   zone_id     = ""
 }

@@ -57,7 +57,7 @@ resource "aws_iam_role_policy" "lambda_edge_policy" {
           "s3:PutObject"
         ]
         Resource = [
-          "${var.s3_bucket_arn}/private/*"
+          "${var.s3_bucket_arn}/*"
         ]
         Effect = "Allow"
       },
@@ -155,6 +155,7 @@ resource "aws_lambda_function" "auth_lambda" {
 
   lifecycle {
     create_before_destroy = true
+    ignore_changes        = all
   }
 }
 

@@ -41,16 +41,16 @@ resource "aws_cognito_user_pool" "this" {
 resource "aws_cognito_user_pool_client" "this" {
   name                                 = "${var.prefix}-app-client"
   user_pool_id                         = aws_cognito_user_pool.this.id
-  generate_secret                      = true
+  generate_secret                      = false
   refresh_token_validity               = 30
   access_token_validity                = 1
   id_token_validity                    = 1
   allowed_oauth_flows                  = ["code", "implicit"]
   allowed_oauth_scopes                 = ["phone", "email", "openid", "profile", "aws.cognito.signin.user.admin"]
   allowed_oauth_flows_user_pool_client = true
-  # callback_urls                        = var.callback_urls
-  # logout_urls                          = var.logout_urls
-  supported_identity_providers = ["COGNITO"]
+  callback_urls                        = var.callback_urls
+  logout_urls                          = var.logout_urls
+  supported_identity_providers         = ["COGNITO"]
 
   # JWT token configuration
   token_validity_units {
